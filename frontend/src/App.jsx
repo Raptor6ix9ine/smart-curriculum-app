@@ -12,7 +12,8 @@ function LoginPage({ onLoginSuccess }) {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('http://127.0.0.1:8000/auth/login', { email, password });
+      // The line below is the only change in this component
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/auth/login`, { email, password });
       localStorage.setItem('authToken', response.data.access_token);
       onLoginSuccess();
     } catch (err) { setError('Login failed. Please check your credentials.'); }

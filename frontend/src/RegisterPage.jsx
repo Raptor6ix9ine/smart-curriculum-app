@@ -17,7 +17,8 @@ function RegisterPage() {
       department: formData.role === 'teacher' ? formData.department : null,
     };
     try {
-      const response = await axios.post('http://127.0.0.1:8000/auth/register', payload);
+      // The line below is the only change in this component
+      const response = await axios.post(`${import.meta.env.VITE_API_URL}/auth/register`, payload);
       setMessage(response.data.message);
     } catch (err) { setError(err.response?.data?.detail || 'Registration failed.'); }
   };
