@@ -1,58 +1,109 @@
-import React, { useState } from 'react';
-import axios from 'axios';
-import './App.css';
+import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import './index.css';
 import Dashboard from './Dashboard';
-import RegisterPage from './RegisterPage';
 
-function LoginPage({ onLoginSuccess }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+// --- Initialize Supabase Client (no changes here) ---
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    try {
-      // The line below is the only change in this component
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/auth/login`, { email, password });
-      localStorage.setItem('authToken', response.data.access_token);
-      onLoginSuccess();
-    } catch (err) { setError('Login failed. Please check your credentials.'); }
-  };
-
+// --- Component for Step 1: Role Selection ---
+function RoleSelectionPage({ onSelectRole }) {
   return (
-    <div className="login-container">
-      <h2>Login to Your Dashboard</h2>
-      <form onSubmit={handleLogin}>
-        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        {error && <p className="error-message">{error}</p>}
-        <button type="submit">Login</button>
-      </form>
+    <div className="text-center">
+      <h1 className="text-4xl font-bold text-white mb-8">Welcome to Smart Curriculum</h1>
+      <p className="text-lg text-gray-400 mb-8">Please select your role to continue.</p>
+      <div className="space-y-4">
+        <button onClick={() => onSelectRole('student')} className="w-full max-w-xs p-4 bg-dark-card border border-gray-700 rounded-lg text-white font-bold hover:border-spark-green transition-colors">
+          I am a Student
+        </button>
+        <button onClick={() => onSelectRole('teacher')} className="w-full max-w-xs p-4 bg-dark-card border border-gray-700 rounded-lg text-white font-bold hover:border-spark-green transition-colors">
+          I am a Teacher
+        </button>
+      </div>
     </div>
   );
 }
 
+// --- Component for Step 2: ID Entry and Google Login ---
+function LoginPage({ role, onBack }) {
+  const [userId, setUserId] = useState('');
+
+  const handleGoogleLogin = async () => {
+    // We will pass the entered ID along with the Google login request
+    // using a special 'data' field that Supabase provides.
+    // For now, let's keep it simple and handle verification after login.
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+    });
+    if (error) console.error('Error logging in with Google:', error);
+  };
+
+  return (
+    <div className="w-full max-w-md text-center">
+      <h2 className="text-3xl font-bold text-white mb-6">
+        {role === 'student' ? 'Student Login' : 'Teacher Login'}
+      </h2>
+      <div className="space-y-4">
+        <input 
+          type="text" 
+          placeholder={role === 'student' ? "Enter Your Roll Number" : "Enter Your Employee ID"} 
+          value={userId} 
+          onChange={(e) => setUserId(e.target.value)} 
+          className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green"
+          required 
+        />
+        <button onClick={handleGoogleLogin} className="w-full p-4 bg-dark-card border border-gray-700 rounded-lg text-white font-bold hover:border-spark-green transition-colors flex items-center justify-center gap-4">
+          <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google logo" className="w-6 h-6"/>
+          Sign in with Google
+        </button>
+      </div>
+      <button onClick={onBack} className="mt-6 text-gray-400 hover:text-white transition-colors">
+        Go Back
+      </button>
+    </div>
+  );
+}
+
+// --- The Main App Component ---
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('authToken'));
-  const [showRegister, setShowRegister] = useState(false);
+  const [session, setSession] = useState(null);
+  const [userRole, setUserRole] = useState(null);
 
-  if (isLoggedIn) return <Dashboard />;
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
 
-  if (showRegister) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+  
+  // This is a simplified version of the verification flow
+  // A real app would add more robust checks here
+  if (session) {
+    return <Dashboard />;
+  }
+
+  // If no role is selected, show the role selection page
+  if (!userRole) {
     return (
-      <div className="App">
-        <RegisterPage />
-        <button onClick={() => setShowRegister(false)}>Back to Login</button>
+      <div className="bg-dark-bg min-h-screen flex items-center justify-center">
+        <RoleSelectionPage onSelectRole={setUserRole} />
       </div>
     );
   }
 
+  // If a role IS selected, show the ID entry / Google login page
   return (
-    <div className="App">
-      <LoginPage onLoginSuccess={() => setIsLoggedIn(true)} />
-      <p>Don't have an account?</p>
-      <button onClick={() => setShowRegister(true)}>Register Here</button>
+    <div className="bg-dark-bg min-h-screen flex items-center justify-center">
+      <LoginPage role={userRole} onBack={() => setUserRole(null)} />
     </div>
   );
 }
+
 export default App;

@@ -17,34 +17,44 @@ function RegisterPage() {
       department: formData.role === 'teacher' ? formData.department : null,
     };
     try {
-      // The line below is the only change in this component
       const response = await axios.post(`${import.meta.env.VITE_API_URL}/auth/register`, payload);
       setMessage(response.data.message);
     } catch (err) { setError(err.response?.data?.detail || 'Registration failed.'); }
   };
+  
+  if (message) {
+    return (
+      <div className="text-center p-4">
+        <h3 className="text-2xl font-bold text-spark-green">Success!</h3>
+        <p className="text-gray-300 mt-2">{message}</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="register-container">
-      <h2>Register a New Account</h2>
-      <form onSubmit={handleSubmit}>
-        <input name="fullName" type="text" placeholder="Full Name" onChange={handleChange} required />
-        <input name="email" type="email" placeholder="Email Address" onChange={handleChange} required />
-        <input name="password" type="password" placeholder="Password" onChange={handleChange} required />
-        <select name="role" value={formData.role} onChange={handleChange}>
+    <div className="w-full max-w-md p-4">
+      <h2 className="text-3xl font-bold text-center text-white mb-6">Create an Account</h2>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input name="fullName" type="text" placeholder="Full Name" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
+        <input name="email" type="email" placeholder="Email Address" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
+        <input name="password" type="password" placeholder="Password" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
+        
+        <select name="role" value={formData.role} onChange={handleChange} className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green appearance-none">
           <option value="student">Student</option>
           <option value="teacher">Teacher</option>
         </select>
-        {formData.role === 'student' && <input name="enrollmentId" type="text" placeholder="Enrollment ID" onChange={handleChange} required />}
+
+        {formData.role === 'student' && <input name="enrollmentId" type="text" placeholder="Enrollment ID" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />}
         {formData.role === 'teacher' && (
           <>
-            <input name="employeeId" type="text" placeholder="Employee ID" onChange={handleChange} required />
-            <input name="department" type="text" placeholder="Department" onChange={handleChange} required />
+            <input name="employeeId" type="text" placeholder="Employee ID" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
+            <input name="department" type="text" placeholder="Department" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
           </>
         )}
-        <button type="submit">Register</button>
+
+        <button type="submit" className="w-full p-3 bg-spark-green text-white font-bold rounded-lg hover:bg-green-500 transition-colors">Register</button>
+        {error && <p className="text-red-500 text-sm text-center">{error}</p>}
       </form>
-      {message && <p className="success-message">{message}</p>}
-      {error && <p className="error-message">{error}</p>}
     </div>
   );
 }

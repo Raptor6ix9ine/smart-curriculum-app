@@ -1,55 +1,124 @@
 from fastapi import FastAPI, HTTPException, Depends
 from database import supabase
-from models import User, Token, UserCreate, UserDetails, ScheduleItem
+from models import MagicLinkRequest, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest, VerifyRequest
 from security import get_current_user
 from datetime import date
+import time
+import qrcode
+import io
+from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
-@app.post("/auth/register")
-async def register(user_data: UserCreate):
-    if user_data.role not in ['student', 'teacher']:
-        raise HTTPException(status_code=400, detail="Invalid role specified.")
-    try:
-        sign_up_response = supabase.auth.sign_up({"email": user_data.email, "password": user_data.password})
-        if not sign_up_response.user:
-            raise HTTPException(status_code=400, detail="Could not create user.")
-        user_id = sign_up_response.user.id
-        update_data = {
-            "full_name": user_data.full_name, "role": user_data.role,
-            "enrollment_id": user_data.enrollment_id, "employee_id": user_data.employee_id,
-            "department": user_data.department
-        }
-        _, error = supabase.from_("users").update(update_data).eq("id", user_id).execute()
-        if error:
-            raise HTTPException(status_code=500, detail=f"Error saving user details: {error.message}")
-        return {"message": "User registered successfully. Please check your email to verify."}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# --- AUTHENTICATION ---
+@app.post("/auth/magic-link")
+async def send_magic_link(request: MagicLinkRequest):
+    id_column = "roll_number" if request.role == 'student' else "employee_id"
 
-@app.post("/auth/login", response_model=Token)
-async def login(user: User):
-    try:
-        response = supabase.auth.sign_in_with_password({"email": user.email, "password": user.password})
-        if response.session and response.session.access_token:
-            return {"access_token": response.session.access_token, "token_type": "bearer"}
-        else:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    response = supabase.from_("users_view").select("id").eq("email", request.email).eq(id_column, request.user_id).single().execute()
 
+    if not response.data:
+        raise HTTPException(status_code=404, detail="No matching user found with that Email and ID.")
+
+    try:
+        supabase.auth.sign_in_with_otp({"email": request.email})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not send login link: {e}")
+
+    return {"message": "Login link sent! Please check your email."}
+
+# --- NEW: Endpoint to verify Google Login against our database ---
+@app.post("/api/verify-user")
+async def verify_user(request: VerifyRequest):
+    id_column = "roll_number" if request.role == 'student' else "employee_id"
+    
+    # Check if a user exists with this exact email AND user_id
+    response = supabase.from_("users_view").select("id") \
+        .eq("email", request.email) \
+        .eq(id_column, request.user_id) \
+        .single().execute()
+
+    if response.data:
+        return {"status": "ok", "user": response.data}
+    else:
+        raise HTTPException(status_code=404, detail="The ID you entered does not match the logged-in Google account.")
+
+# --- USER & SCHEDULE DATA ---
 @app.get("/api/users/me", response_model=UserDetails)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
     user_id = current_user.id
-    response = supabase.from_("users").select("full_name, role").eq("id", user_id).single().execute()
+    response = supabase.from_("users_view").select("full_name, role").eq("id", user_id).single().execute()
+    
     if not response.data:
         raise HTTPException(status_code=404, detail="User details not found")
+        
     return UserDetails(id=user_id, full_name=response.data['full_name'], email=current_user.email, role=response.data['role'])
 
 @app.get("/api/schedules/my-day", response_model=list[ScheduleItem])
 async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
-    mock_schedule = [
-        {"course_name": "Data Structures", "start_time": "09:00", "end_time": "10:00", "teacher_name": "Dr. Alan"},
-        {"course_name": "Algorithms", "start_time": "11:00", "end_time": "12:00", "teacher_name": "Dr. Alan"},
-    ]
-    return mock_schedule
+    user_id = current_user.id
+    day_of_week = date.today().weekday() + 1 # Monday=1, Sunday=7
+
+    user_details = await read_users_me(current_user)
+    
+    # This query now correctly joins tables to get all needed info
+    query = supabase.from_("schedules").select("id, start_time, end_time, course:courses(course_name), teacher:profiles(full_name)")
+    
+    # If the user is a teacher, filter by their ID
+    if user_details.role == 'teacher':
+        query = query.eq("teacher_id", user_id)
+        
+    response = query.eq("day_of_week", day_of_week).execute()
+    
+    if not response.data:
+        return []
+    
+    schedule_list = []
+    for item in response.data:
+        # Make sure 'teacher' and 'course' are not None before accessing 'full_name' or 'course_name'
+        teacher_name = item.get('teacher', {}).get('full_name', 'N/A') if item.get('teacher') else 'N/A'
+        course_name = item.get('course', {}).get('course_name', 'N/A') if item.get('course') else 'N/A'
+        
+        schedule_list.append(ScheduleItem(
+            schedule_id=item['id'],
+            course_name=course_name,
+            start_time=item['start_time'],
+            end_time=item['end_time'],
+            teacher_name=teacher_name
+        ))
+    return schedule_list
+
+# --- ATTENDANCE SYSTEM ---
+temp_token_store = {}
+
+@app.post("/api/attendance/generate-qr")
+async def generate_qr_code(qr_request: QRRequest, current_user: dict = Depends(get_current_user)):
+    expiration_time = int(time.time()) + 60
+    token_data = f"{qr_request.schedule_id}:{expiration_time}"
+    temp_token_store[token_data] = True
+    img = qrcode.make(token_data)
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+@app.post("/api/attendance/mark")
+async def mark_attendance(request: MarkAttendanceRequest, current_user: dict = Depends(get_current_user)):
+    if request.token not in temp_token_store:
+        raise HTTPException(status_code=400, detail="Invalid or expired QR Code.")
+    try:
+        schedule_id, expiration_time_str = request.token.split(":")
+        if time.time() > int(expiration_time_str):
+            raise HTTPException(status_code=400, detail="Expired QR Code.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Malformed QR Code.")
+    
+    _, error = supabase.from_("attendance_records").insert({
+        "student_id": current_user.id, "schedule_id": schedule_id,
+        "session_date": str(date.today()), "status": "present"
+    }).execute()
+    if error:
+        raise HTTPException(status_code=500, detail="Failed to record attendance.")
+        
+    del temp_token_store[request.token]
+    return {"message": "Attendance marked successfully!"}
