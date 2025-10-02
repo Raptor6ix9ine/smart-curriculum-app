@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { supabase } from './supabaseClient'; // <-- CHANGE HERE
+import { supabase } from './supabaseClient';
 
 // --- Teacher's View ---
 function TeacherDashboard({ user, schedule, api }) {
+    // ... (This component is correct, no changes needed)
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
 
     const generateQr = async (scheduleId) => {
@@ -55,34 +56,19 @@ function TeacherDashboard({ user, schedule, api }) {
 
 // --- Student's View ---
 function StudentDashboard({ user, schedule, api }) {
+    // ... (This component is correct, no changes needed)
     const [showScanner, setShowScanner] = useState(false);
 
     useEffect(() => {
-        if (!showScanner) {
-            return;
-        }
-
-        const scanner = new Html5QrcodeScanner(
-            'qr-reader',
-            { fps: 10, qrbox: { width: 250, height: 250 } },
-            false
-        );
-
-        const onScanSuccess = (decodedText, decodedResult) => {
+        if (!showScanner) return;
+        const scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
+        const onScanSuccess = (decodedText) => {
             scanner.clear();
             setShowScanner(false);
             handleScanResult(decodedText);
         };
-
-        const onScanFailure = (error) => {};
-
-        scanner.render(onScanSuccess, onScanFailure);
-
-        return () => {
-            if (scanner) {
-                scanner.clear().catch(err => console.error("Failed to clear scanner", err));
-            }
-        };
+        scanner.render(onScanSuccess, () => {});
+        return () => { if (scanner) scanner.clear().catch(err => {}); };
     }, [showScanner]);
 
     const handleScanResult = async (token) => {
@@ -130,7 +116,8 @@ function Dashboard() {
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    
+    const [api, setApi] = useState(null); // <-- NEW: State to hold the api instance
+
     useEffect(() => {
         const fetchData = async () => {
             const { data: { session } } = await supabase.auth.getSession();
@@ -141,21 +128,23 @@ function Dashboard() {
             }
 
             const token = session.access_token;
-            const api = axios.create({
+            // Create the axios instance ONCE and save it to state
+            const axiosInstance = axios.create({
                 baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+            setApi(axiosInstance);
 
             try {
+                // Use the new axios instance for all calls
                 const [userResponse, scheduleResponse] = await Promise.all([
-                    api.get('/api/users/me'),
-                    api.get('/api/schedules/my-day')
+                    axiosInstance.get('/api/users/me'),
+                    axiosInstance.get('/api/schedules/my-day')
                 ]);
                 setUser(userResponse.data);
                 setSchedule(scheduleResponse.data);
             } catch (err) {
                 setError('Failed to fetch data.');
-                console.error(err);
             } finally {
                 setLoading(false);
             }
@@ -183,8 +172,9 @@ function Dashboard() {
                     </button>
                 </header>
 
-                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000', headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` } })} />}
-                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000', headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` } })} />}
+                {/* --- CHANGE HERE: Pass the 'api' instance from state --- */}
+                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
+                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
             </div>
         </div>
     );

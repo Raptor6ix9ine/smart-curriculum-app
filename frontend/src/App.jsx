@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { supabase } from './supabaseClient'; // Import from our new file
 import './index.css';
 import Dashboard from './Dashboard';
 
-// This is the login page with a form for email and ID
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [userId, setUserId] = useState('');
@@ -76,36 +76,32 @@ function LoginPage() {
 }
 
 
-// The main App component that handles the session from the magic link
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('authToken'));
+  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      const accessToken = params.get('access_token');
-      if (accessToken) {
-        localStorage.setItem('authToken', accessToken);
-        setIsLoggedIn(true);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-    }
-    setLoading(false);
+    // This gets the session on the initial load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // This listens for any login or logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   if (loading) {
     return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
   }
 
-  if (isLoggedIn) {
-    return <Dashboard />;
-  }
-
   return (
     <div className="bg-dark-bg min-h-screen flex items-center justify-center">
-      <LoginPage />
+      {session ? <Dashboard /> : <LoginPage />}
     </div>
   );
 }
