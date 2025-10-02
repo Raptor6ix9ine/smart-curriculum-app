@@ -3,7 +3,6 @@ import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { supabase } from './supabaseClient';
 
-// --- Teacher's View (No Changes) ---
 function TeacherDashboard({ user, schedule, api }) {
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
 
@@ -43,7 +42,7 @@ function TeacherDashboard({ user, schedule, api }) {
             {qrCodeUrl && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
                     <div className="bg-dark-card p-8 rounded-lg text-center">
-                        <h3 className="text-2xl font-bold text-white mb-4">Scan for Attendance.</h3>
+                        <h3 className="text-2xl font-bold text-white mb-4">Scan for Attendance</h3>
                         <img src={qrCodeUrl} alt="Attendance QR Code" className="bg-white p-2 rounded-lg"/>
                         <button onClick={() => setQrCodeUrl(null)} className="mt-6 px-6 py-2 bg-gray-600 text-white rounded-lg">Close</button>
                     </div>
@@ -53,7 +52,6 @@ function TeacherDashboard({ user, schedule, api }) {
     );
 }
 
-// --- Student's View (No Changes) ---
 function StudentDashboard({ user, schedule, api }) {
     const [showScanner, setShowScanner] = useState(false);
 
@@ -63,7 +61,7 @@ function StudentDashboard({ user, schedule, api }) {
         try {
             scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
             const onScanSuccess = (decodedText) => {
-                if (scanner) scanner.clear().catch(err => {});
+                if(scanner) scanner.clear();
                 setShowScanner(false);
                 handleScanResult(decodedText);
             };
@@ -113,7 +111,6 @@ function StudentDashboard({ user, schedule, api }) {
     );
 }
 
-// --- Main Dashboard Component ---
 function Dashboard({ session }) {
     const [user, setUser] = useState(null);
     const [schedule, setSchedule] = useState([]);
@@ -159,7 +156,6 @@ function Dashboard({ session }) {
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading Dashboard...</div>;
     if (error) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-red-500">{error}</div>;
 
-    // We need to wait until the user and api are loaded before rendering the sub-dashboards
     if (!user || !api) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
 
     return (
@@ -175,9 +171,6 @@ function Dashboard({ session }) {
                     </button>
                 </header>
 
-                {/* --- THIS IS THE FIX --- 
-                    We now pass the 'api' instance from our state, instead of creating a new one.
-                */}
                 {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
                 {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
             </div>
