@@ -5,7 +5,6 @@ import { supabase } from './supabaseClient';
 
 // --- Teacher's View ---
 function TeacherDashboard({ user, schedule, api }) {
-    // ... (This component is correct, no changes needed)
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
 
     const generateQr = async (scheduleId) => {
@@ -42,7 +41,7 @@ function TeacherDashboard({ user, schedule, api }) {
                 )) : <p className="text-gray-400">No classes scheduled for today.</p>}
             </div>
             {qrCodeUrl && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
                     <div className="bg-dark-card p-8 rounded-lg text-center">
                         <h3 className="text-2xl font-bold text-white mb-4">Scan for Attendance</h3>
                         <img src={qrCodeUrl} alt="Attendance QR Code" className="bg-white p-2 rounded-lg"/>
@@ -56,22 +55,25 @@ function TeacherDashboard({ user, schedule, api }) {
 
 // --- Student's View ---
 function StudentDashboard({ user, schedule, api }) {
-    // ... (This component is correct, no changes needed)
     const [showScanner, setShowScanner] = useState(false);
 
     useEffect(() => {
         if (!showScanner) return;
-        const scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
-        const onScanSuccess = (decodedText) => {
-            scanner.clear();
-            setShowScanner(false);
-            handleScanResult(decodedText);
-        };
-        scanner.render(onScanSuccess, () => {});
+        let scanner;
+        try {
+            scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
+            const onScanSuccess = (decodedText) => {
+                handleScanResult(decodedText);
+            };
+            scanner.render(onScanSuccess, () => {});
+        } catch (error) {
+            console.error("QR Scanner initialization failed", error);
+        }
         return () => { if (scanner) scanner.clear().catch(err => {}); };
     }, [showScanner]);
 
     const handleScanResult = async (token) => {
+        if (showScanner) setShowScanner(false);
         try {
             const response = await api.post('/api/attendance/mark', { token });
             alert(response.data.message);
@@ -98,7 +100,7 @@ function StudentDashboard({ user, schedule, api }) {
                 </button>
             </div>
             {showScanner && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
                     <div className="bg-dark-card p-8 rounded-lg w-full max-w-md">
                         <h3 className="text-2xl font-bold text-white mb-4 text-center">Point Camera at QR Code</h3>
                         <div id="qr-reader"></div>
@@ -111,46 +113,41 @@ function StudentDashboard({ user, schedule, api }) {
 }
 
 // --- Main Dashboard Component ---
-function Dashboard() {
+function Dashboard({ session }) { // <-- Receives session as a prop
     const [user, setUser] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [api, setApi] = useState(null); // <-- NEW: State to hold the api instance
-
+    
     useEffect(() => {
         const fetchData = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
-                setError('No authentication session found. Please login.');
+                setError('No authentication session found.');
                 setLoading(false);
                 return;
             }
 
             const token = session.access_token;
-            // Create the axios instance ONCE and save it to state
-            const axiosInstance = axios.create({
+            const api = axios.create({
                 baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            setApi(axiosInstance);
 
             try {
-                // Use the new axios instance for all calls
                 const [userResponse, scheduleResponse] = await Promise.all([
-                    axiosInstance.get('/api/users/me'),
-                    axiosInstance.get('/api/schedules/my-day')
+                    api.get('/api/users/me'),
+                    api.get('/api/schedules/my-day')
                 ]);
                 setUser(userResponse.data);
                 setSchedule(scheduleResponse.data);
             } catch (err) {
-                setError('Failed to fetch data.');
+                setError('Failed to fetch data from your API.');
             } finally {
                 setLoading(false);
             }
         };
         fetchData();
-    }, []);
+    }, [session]); // Re-run if the session prop changes
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -172,9 +169,8 @@ function Dashboard() {
                     </button>
                 </header>
 
-                {/* --- CHANGE HERE: Pass the 'api' instance from state --- */}
-                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
-                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
+                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000', headers: { 'Authorization': `Bearer ${session.access_token}` } })} />}
+                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000', headers: { 'Authorization': `Bearer ${session.access_token}` } })} />}
             </div>
         </div>
     );

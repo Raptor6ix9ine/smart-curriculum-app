@@ -75,19 +75,16 @@ function LoginPage() {
   );
 }
 
-
 function App() {
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true); // The crucial loading state
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // This gets the session when the page first loads
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setLoading(false); // We stop loading after the first check
+      setLoading(false);
     });
 
-    // This listens for when the user logs in via the magic link
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -95,17 +92,14 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // While we're checking for a session, show a loading screen
   if (loading) {
     return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
   }
 
-  // If we're done loading and a session exists, show the dashboard
   return (
     <div className="bg-dark-bg min-h-screen flex items-center justify-center">
-      {session ? <Dashboard /> : <LoginPage />}
+      {session ? <Dashboard session={session} /> : <LoginPage />}
     </div>
   );
 }
-
 export default App;
