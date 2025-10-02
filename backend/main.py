@@ -11,7 +11,7 @@ from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
-origins = ["*"] # For simplicity in this final version, allows all origins.
+origins = ["*"] 
 app.add_middleware(
     CORSMiddleware, allow_origins=origins, allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
@@ -20,11 +20,15 @@ app.add_middleware(
 @app.post("/auth/register")
 async def register(user_data: UserCreate):
     try:
+        # Step 1: Create the user in Supabase Auth (handles email and password)
         auth_response = supabase.auth.sign_up({"email": user_data.email, "password": user_data.password})
         if not auth_response.user: raise HTTPException(status_code=400, detail="Could not create user account.")
         
         user_id = auth_response.user.id
-        profile_data = user_data.model_dump(exclude={"password"})
+        
+        # Step 2: Create the user's profile in our public profiles table
+        # THIS IS THE CORRECTED LINE:
+        profile_data = user_data.model_dump(exclude={"password", "email"}) 
         profile_data["id"] = str(user_id)
         
         _, error = supabase.from_("profiles").insert(profile_data).execute()
@@ -42,12 +46,14 @@ async def login(user_data: UserLogin):
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid login credentials: {e}")
 
+# --- All other endpoints below are correct and unchanged ---
+
 @app.get("/api/users/me", response_model=UserDetails)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
-    user_id = current_user.id
-    response = supabase.from_("users_view").select("full_name, role, email").eq("id", str(user_id)).single().execute()
+    user_id = str(current_user.id)
+    response = supabase.from_("users_view").select("full_name, role, email").eq("id", user_id).single().execute()
     if not response.data: raise HTTPException(status_code=404, detail="User details not found")
-    return UserDetails(id=str(user_id), full_name=response.data['full_name'], email=response.data['email'], role=response.data['role'])
+    return UserDetails(id=user_id, full_name=response.data['full_name'], email=response.data['email'], role=response.data['role'])
 
 @app.get("/api/schedules/my-day", response_model=list[ScheduleItem])
 async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
@@ -66,6 +72,7 @@ async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
         query = query.in_("course_id", course_ids)
         
     response = query.eq("day_of_week", day_of_week).execute()
+    
     if not response.data: return []
     
     schedule_list = []
