@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { supabase } from './supabaseClient'; // Import from our new file
+import { supabase } from './supabaseClient';
 import './index.css';
 import Dashboard from './Dashboard';
 
@@ -78,16 +78,16 @@ function LoginPage() {
 
 function App() {
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // The crucial loading state
 
   useEffect(() => {
-    // This gets the session on the initial load
+    // This gets the session when the page first loads
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setLoading(false);
+      setLoading(false); // We stop loading after the first check
     });
 
-    // This listens for any login or logout events
+    // This listens for when the user logs in via the magic link
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
@@ -95,10 +95,12 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // While we're checking for a session, show a loading screen
   if (loading) {
     return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
   }
 
+  // If we're done loading and a session exists, show the dashboard
   return (
     <div className="bg-dark-bg min-h-screen flex items-center justify-center">
       {session ? <Dashboard /> : <LoginPage />}
