@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // <-- CHANGE HERE
+import { createClient } from '@supabase/supabase-js';
 import './index.css';
 import Dashboard from './Dashboard';
 
-// --- Component for Step 1: Role Selection ---
+// --- Initialize Supabase Client ---
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// --- Login Page Components (No Changes Here) ---
 function RoleSelectionPage({ onSelectRole }) {
+  // ... (This component code is the same as before)
   return (
     <div className="text-center">
       <h1 className="text-4xl font-bold text-white mb-8">Welcome to Smart Curriculum</h1>
@@ -21,8 +27,8 @@ function RoleSelectionPage({ onSelectRole }) {
   );
 }
 
-// --- Component for Step 2: ID Entry and Google Login ---
 function LoginPage({ role, onBack }) {
+  // ... (This component code is the same as before)
   const [userId, setUserId] = useState('');
 
   const handleGoogleLogin = async () => {
@@ -62,11 +68,16 @@ function LoginPage({ role, onBack }) {
 function App() {
   const [session, setSession] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [loading, setLoading] = useState(true); // <-- NEW LOADING STATE
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const fetchSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
-    });
+      setLoading(false); // <-- Set loading to false after the first check
+    };
+
+    fetchSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -75,10 +86,18 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
   
+  // -- NEW RENDERING LOGIC ---
+  // 1. If we are still loading the session, show a loading message
+  if (loading) {
+    return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
+  }
+
+  // 2. If there IS a session, show the Dashboard
   if (session) {
     return <Dashboard />;
   }
-
+  
+  // 3. If there is NO session and NO role selected, show Role Selection
   if (!userRole) {
     return (
       <div className="bg-dark-bg min-h-screen flex items-center justify-center">
@@ -87,10 +106,12 @@ function App() {
     );
   }
 
+  // 4. If there is NO session but a role IS selected, show the Login Page
   return (
     <div className="bg-dark-bg min-h-screen flex items-center justify-center">
       <LoginPage role={userRole} onBack={() => setUserRole(null)} />
     </div>
   );
 }
+
 export default App;
