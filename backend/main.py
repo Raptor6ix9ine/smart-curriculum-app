@@ -17,26 +17,32 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
+# --- THIS FUNCTION HAS BEEN CORRECTED ---
 @app.post("/auth/register")
 async def register(user_data: UserCreate):
     try:
-        # Step 1: Create the user in Supabase Auth (handles email and password)
+        # Step 1: Create the user in Supabase Auth
         auth_response = supabase.auth.sign_up({"email": user_data.email, "password": user_data.password})
         if not auth_response.user: raise HTTPException(status_code=400, detail="Could not create user account.")
         
         user_id = auth_response.user.id
         
         # Step 2: Create the user's profile in our public profiles table
-        # THIS IS THE CORRECTED LINE:
         profile_data = user_data.model_dump(exclude={"password", "email"}) 
         profile_data["id"] = str(user_id)
         
-        _, error = supabase.from_("profiles").insert(profile_data).execute()
-        if error: raise HTTPException(status_code=500, detail=f"Error creating user profile: {error.message}")
+        # The way we handle the response is now fixed
+        insert_response = supabase.from_("profiles").insert(profile_data).execute()
+        
+        if insert_response.error:
+            # If creating profile fails, delete the auth user we just created to keep things clean
+            supabase.auth.admin.delete_user(user_id)
+            raise HTTPException(status_code=500, detail=f"Error creating user profile: {insert_response.error.message}")
             
         return {"message": "User registered successfully!"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @app.post("/auth/login")
 async def login(user_data: UserLogin):
