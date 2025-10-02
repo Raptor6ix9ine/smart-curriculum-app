@@ -23,7 +23,8 @@ async def register(user_data: UserCreate):
     try:
         # Step 1: Create the user in Supabase Auth
         auth_response = supabase.auth.sign_up({"email": user_data.email, "password": user_data.password})
-        if not auth_response.user: raise HTTPException(status_code=400, detail="Could not create user account.")
+        if not auth_response.user: 
+             raise Exception("Supabase could not create user account.")
         
         user_id = auth_response.user.id
         
@@ -31,16 +32,14 @@ async def register(user_data: UserCreate):
         profile_data = user_data.model_dump(exclude={"password", "email"}) 
         profile_data["id"] = str(user_id)
         
-        # The way we handle the response is now fixed
-        insert_response = supabase.from_("profiles").insert(profile_data).execute()
-        
-        if insert_response.error:
-            # If creating profile fails, delete the auth user we just created to keep things clean
-            supabase.auth.admin.delete_user(user_id)
-            raise HTTPException(status_code=500, detail=f"Error creating user profile: {insert_response.error.message}")
+        # This part has been simplified. If an error occurs here,
+        # the 'except' block below will catch it automatically.
+        supabase.from_("profiles").insert(profile_data).execute()
             
         return {"message": "User registered successfully!"}
     except Exception as e:
+        # This will now correctly catch any error from the process
+        # and report it to the frontend.
         raise HTTPException(status_code=400, detail=str(e))
 
 
