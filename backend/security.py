@@ -1,15 +1,9 @@
-import os
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from supabase import create_client, Client
-from dotenv import load_dotenv
+from database import supabase # <-- Imports the client
 
-load_dotenv()
-url: str = os.environ.get("SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+# This is for a password-based login, we can leave it for now
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
