@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
-import { supabase } from './App'; // Import the supabase client from App.jsx
+import { supabase } from './supabaseClient'; // <-- CHANGE HERE
 
 // --- Teacher's View ---
 function TeacherDashboard({ user, schedule, api }) {
@@ -59,37 +59,31 @@ function StudentDashboard({ user, schedule, api }) {
 
     useEffect(() => {
         if (!showScanner) {
-            return; // Do nothing if the scanner isn't shown
+            return;
         }
 
         const scanner = new Html5QrcodeScanner(
-            'qr-reader', // The ID of the div element below
+            'qr-reader',
             { fps: 10, qrbox: { width: 250, height: 250 } },
-            false // verbose
+            false
         );
 
         const onScanSuccess = (decodedText, decodedResult) => {
-            // Stop the scanner and close the modal
             scanner.clear();
             setShowScanner(false);
-            
-            // Handle the result
             handleScanResult(decodedText);
         };
 
-        const onScanFailure = (error) => {
-            // (You can ignore scan failures)
-        };
+        const onScanFailure = (error) => {};
 
         scanner.render(onScanSuccess, onScanFailure);
 
-        // Cleanup function to stop the scanner when the component unmounts or scanner is hidden
         return () => {
             if (scanner) {
                 scanner.clear().catch(err => console.error("Failed to clear scanner", err));
             }
         };
-    }, [showScanner]); // This effect runs when `showScanner` changes
+    }, [showScanner]);
 
     const handleScanResult = async (token) => {
         try {
@@ -121,7 +115,6 @@ function StudentDashboard({ user, schedule, api }) {
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center">
                     <div className="bg-dark-card p-8 rounded-lg w-full max-w-md">
                         <h3 className="text-2xl font-bold text-white mb-4 text-center">Point Camera at QR Code</h3>
-                        {/* This div is where the scanner will be rendered */}
                         <div id="qr-reader"></div>
                         <button onClick={() => setShowScanner(false)} className="mt-6 w-full px-6 py-2 bg-gray-600 text-white rounded-lg">Cancel</button>
                     </div>
@@ -130,7 +123,6 @@ function StudentDashboard({ user, schedule, api }) {
         </div>
     );
 }
-
 
 // --- Main Dashboard Component ---
 function Dashboard() {
@@ -173,7 +165,6 @@ function Dashboard() {
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
-        // The onAuthStateChange listener in App.jsx will handle hiding the dashboard
     };
 
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading Dashboard...</div>;
@@ -198,5 +189,4 @@ function Dashboard() {
         </div>
     );
 }
-
 export default Dashboard;

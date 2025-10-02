@@ -1,12 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from './supabaseClient'; // <-- CHANGE HERE
 import './index.css';
 import Dashboard from './Dashboard';
-
-// --- Initialize Supabase Client (no changes here) ---
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // --- Component for Step 1: Role Selection ---
 function RoleSelectionPage({ onSelectRole }) {
@@ -31,9 +26,6 @@ function LoginPage({ role, onBack }) {
   const [userId, setUserId] = useState('');
 
   const handleGoogleLogin = async () => {
-    // We will pass the entered ID along with the Google login request
-    // using a special 'data' field that Supabase provides.
-    // For now, let's keep it simple and handle verification after login.
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
     });
@@ -83,13 +75,10 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
   
-  // This is a simplified version of the verification flow
-  // A real app would add more robust checks here
   if (session) {
     return <Dashboard />;
   }
 
-  // If no role is selected, show the role selection page
   if (!userRole) {
     return (
       <div className="bg-dark-bg min-h-screen flex items-center justify-center">
@@ -98,12 +87,10 @@ function App() {
     );
   }
 
-  // If a role IS selected, show the ID entry / Google login page
   return (
     <div className="bg-dark-bg min-h-screen flex items-center justify-center">
       <LoginPage role={userRole} onBack={() => setUserRole(null)} />
     </div>
   );
 }
-
 export default App;
