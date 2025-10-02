@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { supabase } from './supabaseClient';
 
-// --- Teacher's View ---
+// --- Teacher's View (No Changes) ---
 function TeacherDashboard({ user, schedule, api }) {
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
 
@@ -43,7 +43,7 @@ function TeacherDashboard({ user, schedule, api }) {
             {qrCodeUrl && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
                     <div className="bg-dark-card p-8 rounded-lg text-center">
-                        <h3 className="text-2xl font-bold text-white mb-4">Scan for Attendance</h3>
+                        <h3 className="text-2xl font-bold text-white mb-4">Scan for Attendance.</h3>
                         <img src={qrCodeUrl} alt="Attendance QR Code" className="bg-white p-2 rounded-lg"/>
                         <button onClick={() => setQrCodeUrl(null)} className="mt-6 px-6 py-2 bg-gray-600 text-white rounded-lg">Close</button>
                     </div>
@@ -53,7 +53,7 @@ function TeacherDashboard({ user, schedule, api }) {
     );
 }
 
-// --- Student's View ---
+// --- Student's View (No Changes) ---
 function StudentDashboard({ user, schedule, api }) {
     const [showScanner, setShowScanner] = useState(false);
 
@@ -63,6 +63,8 @@ function StudentDashboard({ user, schedule, api }) {
         try {
             scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
             const onScanSuccess = (decodedText) => {
+                if (scanner) scanner.clear().catch(err => {});
+                setShowScanner(false);
                 handleScanResult(decodedText);
             };
             scanner.render(onScanSuccess, () => {});
@@ -73,7 +75,6 @@ function StudentDashboard({ user, schedule, api }) {
     }, [showScanner]);
 
     const handleScanResult = async (token) => {
-        if (showScanner) setShowScanner(false);
         try {
             const response = await api.post('/api/attendance/mark', { token });
             alert(response.data.message);
@@ -113,12 +114,13 @@ function StudentDashboard({ user, schedule, api }) {
 }
 
 // --- Main Dashboard Component ---
-function Dashboard({ session }) { // <-- Receives session as a prop
+function Dashboard({ session }) {
     const [user, setUser] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    
+    const [api, setApi] = useState(null); 
+
     useEffect(() => {
         const fetchData = async () => {
             if (!session) {
@@ -128,15 +130,16 @@ function Dashboard({ session }) { // <-- Receives session as a prop
             }
 
             const token = session.access_token;
-            const api = axios.create({
+            const axiosInstance = axios.create({
                 baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+            setApi(axiosInstance);
 
             try {
                 const [userResponse, scheduleResponse] = await Promise.all([
-                    api.get('/api/users/me'),
-                    api.get('/api/schedules/my-day')
+                    axiosInstance.get('/api/users/me'),
+                    axiosInstance.get('/api/schedules/my-day')
                 ]);
                 setUser(userResponse.data);
                 setSchedule(scheduleResponse.data);
@@ -147,7 +150,7 @@ function Dashboard({ session }) { // <-- Receives session as a prop
             }
         };
         fetchData();
-    }, [session]); // Re-run if the session prop changes
+    }, [session]);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -155,6 +158,9 @@ function Dashboard({ session }) { // <-- Receives session as a prop
 
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading Dashboard...</div>;
     if (error) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-red-500">{error}</div>;
+
+    // We need to wait until the user and api are loaded before rendering the sub-dashboards
+    if (!user || !api) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
 
     return (
         <div className="bg-dark-bg min-h-screen text-gray-200 font-sans p-4">
@@ -169,8 +175,11 @@ function Dashboard({ session }) { // <-- Receives session as a prop
                     </button>
                 </header>
 
-                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000', headers: { 'Authorization': `Bearer ${session.access_token}` } })} />}
-                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={axios.create({ baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000', headers: { 'Authorization': `Bearer ${session.access_token}` } })} />}
+                {/* --- THIS IS THE FIX --- 
+                    We now pass the 'api' instance from our state, instead of creating a new one.
+                */}
+                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
+                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
             </div>
         </div>
     );
