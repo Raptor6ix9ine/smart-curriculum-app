@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
-from fastapi.middleware.cors import CORSMiddleware # <-- 1. ADD THIS IMPORT
+from fastapi.middleware.cors import CORSMiddleware
 from database import supabase
 from models import MagicLinkRequest, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest
 from security import get_current_user
@@ -12,11 +12,10 @@ from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
-# --- 2. ADD THIS ENTIRE CODE BLOCK ---
-# This is the CORS middleware that fixes the connection error.
+# --- THIS SECTION HAS BEEN UPDATED ---
 origins = [
-    "https://earnest-jelly-bfb072.netlify.app", # Your live frontend URL
-    "http://localhost:5173",                     # Your local frontend URL
+    "https://smart-curriculum-app.netlify.app", # <-- IMPORTANT: This URL has been updated to your new site
+    "http://localhost:5173",                     
 ]
 
 app.add_middleware(
