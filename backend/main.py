@@ -1,57 +1,57 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from database import supabase
-from models import MagicLinkRequest, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest
+from models import UserCreate, UserLogin, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest
 from security import get_current_user
 from datetime import date, datetime, timedelta, timezone
-import time
+import uuid
 import qrcode
 import io
-import uuid
 from starlette.responses import StreamingResponse
 
 app = FastAPI()
 
-# --- THIS SECTION HAS BEEN UPDATED ---
-origins = [
-    "https://smart-curriculum-app.netlify.app", # <-- IMPORTANT: This URL has been updated to your new site
-    "http://localhost:5173",                     
-]
-
+origins = ["*"] # For simplicity in this final version, allows all origins.
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_origins=origins, allow_credentials=True,
+    allow_methods=["*"], allow_headers=["*"],
 )
-# ------------------------------------
 
-# --- AUTHENTICATION ---
-@app.post("/auth/magic-link")
-async def send_magic_link(request: MagicLinkRequest):
-    id_column = "roll_number" if request.role == 'student' else "employee_id"
-    response = supabase.from_("users_view").select("id").eq("email", request.email).eq(id_column, request.user_id).single().execute()
-    if not response.data:
-        raise HTTPException(status_code=404, detail="No matching user found with that Email and ID.")
+@app.post("/auth/register")
+async def register(user_data: UserCreate):
     try:
-        supabase.auth.sign_in_with_otp({"email": request.email})
+        auth_response = supabase.auth.sign_up({"email": user_data.email, "password": user_data.password})
+        if not auth_response.user: raise HTTPException(status_code=400, detail="Could not create user account.")
+        
+        user_id = auth_response.user.id
+        profile_data = user_data.model_dump(exclude={"password"})
+        profile_data["id"] = str(user_id)
+        
+        _, error = supabase.from_("profiles").insert(profile_data).execute()
+        if error: raise HTTPException(status_code=500, detail=f"Error creating user profile: {error.message}")
+            
+        return {"message": "User registered successfully!"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not send login link: {e}")
-    return {"message": "Login link sent! Please check your email."}
+        raise HTTPException(status_code=400, detail=str(e))
 
-# --- USER & SCHEDULE DATA ---
+@app.post("/auth/login")
+async def login(user_data: UserLogin):
+    try:
+        response = supabase.auth.sign_in_with_password({"email": user_data.email, "password": user_data.password})
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid login credentials: {e}")
+
 @app.get("/api/users/me", response_model=UserDetails)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
     user_id = current_user.id
-    response = supabase.from_("users_view").select("full_name, role").eq("id", user_id).single().execute()
-    if not response.data:
-        raise HTTPException(status_code=404, detail="User details not found")
-    return UserDetails(id=user_id, full_name=response.data['full_name'], email=current_user.email, role=response.data['role'])
+    response = supabase.from_("users_view").select("full_name, role, email").eq("id", str(user_id)).single().execute()
+    if not response.data: raise HTTPException(status_code=404, detail="User details not found")
+    return UserDetails(id=str(user_id), full_name=response.data['full_name'], email=response.data['email'], role=response.data['role'])
 
 @app.get("/api/schedules/my-day", response_model=list[ScheduleItem])
 async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
-    user_id = current_user.id
+    user_id = str(current_user.id)
     day_of_week = date.today().weekday() + 1
     user_details = await read_users_me(current_user)
     
@@ -61,13 +61,11 @@ async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
         query = query.eq("teacher_id", user_id)
     else:
         enrolled_courses_res = supabase.from_("enrollments").select("course_id").eq("student_id", user_id).execute()
-        if not enrolled_courses_res.data:
-            return []
+        if not enrolled_courses_res.data: return []
         course_ids = [item['course_id'] for item in enrolled_courses_res.data]
         query = query.in_("course_id", course_ids)
         
     response = query.eq("day_of_week", day_of_week).execute()
-    
     if not response.data: return []
     
     schedule_list = []
@@ -77,21 +75,12 @@ async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
         schedule_list.append(ScheduleItem(schedule_id=item['id'], course_name=course_name, start_time=item['start_time'], end_time=item['end_time'], teacher_name=teacher_name))
     return schedule_list
 
-# --- ATTENDANCE SYSTEM (NOW RELIABLE) ---
 @app.post("/api/attendance/generate-qr")
 async def generate_qr_code(qr_request: QRRequest, current_user: dict = Depends(get_current_user)):
     token = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
-    
-    _, error = supabase.from_("qr_tokens").insert({
-        "token": token,
-        "schedule_id": qr_request.schedule_id,
-        "expires_at": str(expires_at)
-    }).execute()
-    
-    if error:
-        raise HTTPException(status_code=500, detail="Could not create QR token.")
-        
+    _, error = supabase.from_("qr_tokens").insert({"token": token, "schedule_id": qr_request.schedule_id, "expires_at": str(expires_at)}).execute()
+    if error: raise HTTPException(status_code=500, detail="Could not create QR token.")
     img = qrcode.make(token)
     buf = io.BytesIO()
     img.save(buf, "PNG")
@@ -101,26 +90,12 @@ async def generate_qr_code(qr_request: QRRequest, current_user: dict = Depends(g
 @app.post("/api/attendance/mark")
 async def mark_attendance(request: MarkAttendanceRequest, current_user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc)
-    
     token_res = supabase.from_("qr_tokens").select("schedule_id, expires_at").eq("token", request.token).single().execute()
-    
-    if not token_res.data:
-        raise HTTPException(status_code=400, detail="Invalid QR Code.")
-        
-    expires_at = datetime.fromisoformat(token_res.data['expires_at'])
-    if now > expires_at:
-        raise HTTPException(status_code=400, detail="Expired QR Code.")
-    
+    if not token_res.data: raise HTTPException(status_code=400, detail="Invalid QR Code.")
+    expires_at = datetime.fromisoformat(token_res.data['expires_at'].replace('Z', '+00:00'))
+    if now > expires_at: raise HTTPException(status_code=400, detail="Expired QR Code.")
     schedule_id = token_res.data['schedule_id']
-    
-    _, error = supabase.from_("attendance_records").insert({
-        "student_id": current_user.id, "schedule_id": schedule_id,
-        "session_date": str(date.today()), "status": "present"
-    }).execute()
-    
-    if error:
-        raise HTTPException(status_code=500, detail="Failed to record attendance or already marked.")
-        
+    _, error = supabase.from_("attendance_records").insert({"student_id": str(current_user.id), "schedule_id": schedule_id, "session_date": str(date.today()), "status": "present"}).execute()
+    if error: raise HTTPException(status_code=500, detail="Failed to record attendance or already marked.")
     supabase.from_("qr_tokens").delete().eq("token", request.token).execute()
-    
     return {"message": "Attendance marked successfully!"}
