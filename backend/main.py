@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware # <-- 1. ADD THIS IMPORT
 from database import supabase
 from models import MagicLinkRequest, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest
 from security import get_current_user
@@ -10,6 +11,22 @@ import uuid
 from starlette.responses import StreamingResponse
 
 app = FastAPI()
+
+# --- 2. ADD THIS ENTIRE CODE BLOCK ---
+# This is the CORS middleware that fixes the connection error.
+origins = [
+    "https://earnest-jelly-bfb072.netlify.app", # Your live frontend URL
+    "http://localhost:5173",                     # Your local frontend URL
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# ------------------------------------
 
 # --- AUTHENTICATION ---
 @app.post("/auth/magic-link")
@@ -33,7 +50,6 @@ async def read_users_me(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="User details not found")
     return UserDetails(id=user_id, full_name=response.data['full_name'], email=current_user.email, role=response.data['role'])
 
-# This endpoint is now fixed to show the correct schedule for students
 @app.get("/api/schedules/my-day", response_model=list[ScheduleItem])
 async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
     user_id = current_user.id
@@ -44,7 +60,7 @@ async def get_my_daily_schedule(current_user: dict = Depends(get_current_user)):
     
     if user_details.role == 'teacher':
         query = query.eq("teacher_id", user_id)
-    else: # Student logic: find enrolled courses, then get schedules for those courses
+    else:
         enrolled_courses_res = supabase.from_("enrollments").select("course_id").eq("student_id", user_id).execute()
         if not enrolled_courses_res.data:
             return []
@@ -68,7 +84,6 @@ async def generate_qr_code(qr_request: QRRequest, current_user: dict = Depends(g
     token = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
     
-    # Store token in the database
     _, error = supabase.from_("qr_tokens").insert({
         "token": token,
         "schedule_id": qr_request.schedule_id,
@@ -88,20 +103,17 @@ async def generate_qr_code(qr_request: QRRequest, current_user: dict = Depends(g
 async def mark_attendance(request: MarkAttendanceRequest, current_user: dict = Depends(get_current_user)):
     now = datetime.now(timezone.utc)
     
-    # Find token in the database
     token_res = supabase.from_("qr_tokens").select("schedule_id, expires_at").eq("token", request.token).single().execute()
     
     if not token_res.data:
         raise HTTPException(status_code=400, detail="Invalid QR Code.")
         
-    # Check for expiration
     expires_at = datetime.fromisoformat(token_res.data['expires_at'])
     if now > expires_at:
         raise HTTPException(status_code=400, detail="Expired QR Code.")
     
     schedule_id = token_res.data['schedule_id']
     
-    # Mark attendance
     _, error = supabase.from_("attendance_records").insert({
         "student_id": current_user.id, "schedule_id": schedule_id,
         "session_date": str(date.today()), "status": "present"
@@ -110,7 +122,6 @@ async def mark_attendance(request: MarkAttendanceRequest, current_user: dict = D
     if error:
         raise HTTPException(status_code=500, detail="Failed to record attendance or already marked.")
         
-    # Delete the used token
     supabase.from_("qr_tokens").delete().eq("token", request.token).execute()
     
     return {"message": "Attendance marked successfully!"}
