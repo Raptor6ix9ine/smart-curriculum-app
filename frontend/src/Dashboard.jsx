@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
+// Define the API_URL correctly at the top of the file
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+
 function TeacherDashboard({ user, schedule, api }) {
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
     const generateQr = async (scheduleId) => {
@@ -91,24 +94,29 @@ function Dashboard({ onLogout }) {
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    
+    const [api, setApi] = useState(null); // State to hold the configured api instance
+
     useEffect(() => {
         const token = localStorage.getItem('authToken');
         if (!token) {
-            setError('No auth token found.'); setLoading(false);
+            setError('No auth token found.');
+            setLoading(false);
             return;
         }
 
-        const api = axios.create({
+        // Create the axios instance ONCE and save it in state
+        const axiosInstance = axios.create({
             baseURL: API_URL,
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        setApi(axiosInstance);
 
         const fetchData = async () => {
             try {
+                // Use the new axios instance for all API calls
                 const [userResponse, scheduleResponse] = await Promise.all([
-                    api.get('/api/users/me'),
-                    api.get('/api/schedules/my-day')
+                    axiosInstance.get('/api/users/me'),
+                    axiosInstance.get('/api/schedules/my-day')
                 ]);
                 setUser(userResponse.data);
                 setSchedule(scheduleResponse.data);
@@ -124,6 +132,11 @@ function Dashboard({ onLogout }) {
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
     if (error) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-red-500">{error}</div>;
 
+    // Wait until user and the api instance are loaded
+    if (!user || !api) {
+        return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
+    }
+
     return (
         <div className="bg-dark-bg min-h-screen text-gray-200 font-sans p-4">
             <div className="max-w-4xl mx-auto">
@@ -134,8 +147,9 @@ function Dashboard({ onLogout }) {
                     </div>
                     <button onClick={onLogout} className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500 hover:text-white">Logout</button>
                 </header>
-                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }})} />}
-                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }})} />}
+                {/* This is the fix: Pass the 'api' instance from state to the child components */}
+                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
+                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
             </div>
         </div>
     );
