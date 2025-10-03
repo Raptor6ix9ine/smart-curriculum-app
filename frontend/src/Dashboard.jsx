@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 
-// Define the API_URL correctly at the top of the file
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 function TeacherDashboard({ user, schedule, api }) {
@@ -44,14 +43,37 @@ function StudentDashboard({ user, schedule, api }) {
     const [showScanner, setShowScanner] = useState(false);
     useEffect(() => {
         if (!showScanner) return;
-        const scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
+
+        // Configure Html5QrcodeScanner to use the rear camera by default
+        const scanner = new Html5QrcodeScanner(
+            'qr-reader',
+            {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                // Use the back camera
+                facingMode: { exact: "environment" } 
+            },
+            false // Disable camera selection UI
+        );
+
         const onScanSuccess = (decodedText) => {
             scanner.clear().catch(()=>{});
             setShowScanner(false);
             handleScanResult(decodedText);
         };
-        scanner.render(onScanSuccess, ()=>{});
-        return () => { if(document.getElementById('qr-reader')) scanner.clear().catch(()=>{}); };
+        
+        // Render the scanner
+        scanner.render(onScanSuccess, (errorMessage) => {
+            // Optional: Log errors if the camera fails to start
+            // console.error("QR Scan Error:", errorMessage);
+        });
+
+        return () => { 
+            // Cleanup function for when the component unmounts
+            if(document.getElementById('qr-reader')) {
+                scanner.clear().catch(()=>{});
+            }
+        };
     }, [showScanner]);
 
     const handleScanResult = async (token) => {
@@ -94,7 +116,7 @@ function Dashboard({ onLogout }) {
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [api, setApi] = useState(null); // State to hold the configured api instance
+    const [api, setApi] = useState(null);
 
     useEffect(() => {
         const token = localStorage.getItem('authToken');
@@ -104,7 +126,6 @@ function Dashboard({ onLogout }) {
             return;
         }
 
-        // Create the axios instance ONCE and save it in state
         const axiosInstance = axios.create({
             baseURL: API_URL,
             headers: { 'Authorization': `Bearer ${token}` }
@@ -113,7 +134,6 @@ function Dashboard({ onLogout }) {
 
         const fetchData = async () => {
             try {
-                // Use the new axios instance for all API calls
                 const [userResponse, scheduleResponse] = await Promise.all([
                     axiosInstance.get('/api/users/me'),
                     axiosInstance.get('/api/schedules/my-day')
@@ -122,6 +142,7 @@ function Dashboard({ onLogout }) {
                 setSchedule(scheduleResponse.data);
             } catch (err) {
                 setError('Failed to fetch data.');
+                console.error("Dashboard data fetch error:", err); // Log the actual error for debugging
             } finally {
                 setLoading(false);
             }
@@ -131,8 +152,7 @@ function Dashboard({ onLogout }) {
 
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
     if (error) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-red-500">{error}</div>;
-
-    // Wait until user and the api instance are loaded
+    
     if (!user || !api) {
         return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
     }
@@ -147,7 +167,7 @@ function Dashboard({ onLogout }) {
                     </div>
                     <button onClick={onLogout} className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500 hover:text-white">Logout</button>
                 </header>
-                {/* This is the fix: Pass the 'api' instance from state to the child components */}
+                
                 {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
                 {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
             </div>
