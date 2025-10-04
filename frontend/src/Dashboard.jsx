@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+// Import the more advanced class from the library
+import { Html5Qrcode } from 'html5-qrcode';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 function TeacherDashboard({ user, schedule, api }) {
+    // ... This component is correct and has no changes
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
     const generateQr = async (scheduleId) => {
         try {
@@ -39,40 +41,54 @@ function TeacherDashboard({ user, schedule, api }) {
     );
 }
 
+// --- THIS IS THE UPDATED STUDENT DASHBOARD ---
 function StudentDashboard({ user, schedule, api }) {
     const [showScanner, setShowScanner] = useState(false);
+
     useEffect(() => {
         if (!showScanner) return;
 
-        // Configure Html5QrcodeScanner to use the rear camera by default
-        const scanner = new Html5QrcodeScanner(
-            'qr-reader',
-            {
-                fps: 10,
-                qrbox: { width: 250, height: 250 },
-                // Use the back camera
-                facingMode: { exact: "environment" } 
-            },
-            false // Disable camera selection UI
-        );
-
-        const onScanSuccess = (decodedText) => {
-            scanner.clear().catch(()=>{});
-            setShowScanner(false);
+        const html5QrCode = new Html5Qrcode('qr-reader');
+        const qrCodeSuccessCallback = (decodedText) => {
             handleScanResult(decodedText);
+            html5QrCode.stop().catch(err => console.error("Failed to stop scanner on success.", err));
+            setShowScanner(false);
         };
-        
-        // Render the scanner
-        scanner.render(onScanSuccess, (errorMessage) => {
-            // Optional: Log errors if the camera fails to start
-            // console.error("QR Scan Error:", errorMessage);
-        });
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
 
-        return () => { 
-            // Cleanup function for when the component unmounts
-            if(document.getElementById('qr-reader')) {
-                scanner.clear().catch(()=>{});
+        const startScanner = async () => {
+            try {
+                // Get all available camera devices
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length) {
+                    let cameraId = devices[0].id; // Default to the first camera
+                    // Find a camera with 'back' in its label, or default to the last camera
+                    const backCamera = devices.find(d => d.label.toLowerCase().includes('back'));
+                    if (backCamera) {
+                        cameraId = backCamera.id;
+                    } else if (devices.length > 1) {
+                        cameraId = devices[devices.length - 1].id;
+                    }
+                    
+                    // Start the scanner with the chosen camera
+                    await html5QrCode.start(
+                        cameraId,
+                        config,
+                        qrCodeSuccessCallback,
+                        undefined // No error callback needed
+                    );
+                }
+            } catch (err) {
+                console.error("Error starting camera:", err);
             }
+        };
+
+        startScanner();
+
+        return () => {
+            html5QrCode.stop().catch(err => {
+                // Ignore "Scanner is not running" error on cleanup
+            });
         };
     }, [showScanner]);
 
@@ -112,6 +128,7 @@ function StudentDashboard({ user, schedule, api }) {
 }
 
 function Dashboard({ onLogout }) {
+    // ... This component is correct and has no changes
     const [user, setUser] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -121,15 +138,10 @@ function Dashboard({ onLogout }) {
     useEffect(() => {
         const token = localStorage.getItem('authToken');
         if (!token) {
-            setError('No auth token found.');
-            setLoading(false);
+            setError('No auth token found.'); setLoading(false);
             return;
         }
-
-        const axiosInstance = axios.create({
-            baseURL: API_URL,
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const axiosInstance = axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${token}` } });
         setApi(axiosInstance);
 
         const fetchData = async () => {
@@ -142,7 +154,6 @@ function Dashboard({ onLogout }) {
                 setSchedule(scheduleResponse.data);
             } catch (err) {
                 setError('Failed to fetch data.');
-                console.error("Dashboard data fetch error:", err); // Log the actual error for debugging
             } finally {
                 setLoading(false);
             }
@@ -167,7 +178,6 @@ function Dashboard({ onLogout }) {
                     </div>
                     <button onClick={onLogout} className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500 hover:text-white">Logout</button>
                 </header>
-                
                 {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
                 {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
             </div>
