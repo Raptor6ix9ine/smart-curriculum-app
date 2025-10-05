@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from database import supabase
-from models import UserCreate, UserLogin, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest
+from models import UserCreate, UserLogin, UserDetails, ScheduleItem, QRRequest, MarkAttendanceRequest, Task, UpdateTaskStatus
 from security import get_current_user
 from datetime import date, datetime, timedelta, timezone
 import uuid
@@ -17,29 +17,21 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# --- THIS FUNCTION HAS BEEN CORRECTED ---
 @app.post("/auth/register")
 async def register(user_data: UserCreate):
     try:
-        # Step 1: Create the user in Supabase Auth
         auth_response = supabase.auth.sign_up({"email": user_data.email, "password": user_data.password})
         if not auth_response.user: 
              raise Exception("Supabase could not create user account.")
         
         user_id = auth_response.user.id
-        
-        # Step 2: Create the user's profile in our public profiles table
         profile_data = user_data.model_dump(exclude={"password", "email"}) 
         profile_data["id"] = str(user_id)
         
-        # This part has been simplified. If an error occurs here,
-        # the 'except' block below will catch it automatically.
         supabase.from_("profiles").insert(profile_data).execute()
             
         return {"message": "User registered successfully!"}
     except Exception as e:
-        # This will now correctly catch any error from the process
-        # and report it to the frontend.
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -50,8 +42,6 @@ async def login(user_data: UserLogin):
         return response
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid login credentials: {e}")
-
-# --- All other endpoints below are correct and unchanged ---
 
 @app.get("/api/users/me", response_model=UserDetails)
 async def read_users_me(current_user: dict = Depends(get_current_user)):
@@ -111,16 +101,54 @@ async def mark_attendance(request: MarkAttendanceRequest, current_user: dict = D
     if error: raise HTTPException(status_code=500, detail="Failed to record attendance or already marked.")
     supabase.from_("qr_tokens").delete().eq("token", request.token).execute()
     return {"message": "Attendance marked successfully!"}
+
 @app.get("/api/warnings/low-attendance")
 async def get_low_attendance_warnings(current_user: dict = Depends(get_current_user)):
-    # Ensure only teachers can access this
     user_details = await read_users_me(current_user)
     if user_details.role != 'teacher':
         raise HTTPException(status_code=403, detail="Unauthorized access.")
-
-    # Call the database function we just created
     try:
         response = supabase.rpc('get_low_attendance_students').execute()
         return response.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- NEW ENDPOINTS FOR SUGGESTIONS ---
+@app.get("/api/suggestions", response_model=list[Task])
+async def get_suggestions(current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user.id)
+    
+    tasks_res = supabase.rpc('get_random_tasks').execute()
+    if not tasks_res.data:
+        return []
+    
+    suggested_tasks = []
+    for task in tasks_res.data:
+        insert_res = supabase.from_("student_tasks").insert({
+            "student_id": user_id,
+            "task_id": task['id'],
+        }).select().single().execute()
+        
+        if insert_res.data:
+            suggested_tasks.append(Task(
+                student_task_id=insert_res.data['id'],
+                title=task['title'],
+                description=task['description'],
+                category=task['category'],
+                status=insert_res.data['status']
+            ))
+    return suggested_tasks
+
+@app.post("/api/student-tasks/{student_task_id}")
+async def update_student_task(student_task_id: str, status_update: UpdateTaskStatus, current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user.id)
+    
+    response = supabase.from_("student_tasks").update({"status": status_update.status}) \
+        .eq("id", student_task_id) \
+        .eq("student_id", user_id) \
+        .execute()
+        
+    if len(response.data) == 0:
+        raise HTTPException(status_code=404, detail="Task not found or permission denied.")
+        
+    return {"message": "Task status updated successfully"}

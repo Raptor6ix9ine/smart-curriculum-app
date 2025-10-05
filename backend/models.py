@@ -32,3 +32,14 @@ class QRRequest(BaseModel):
 
 class MarkAttendanceRequest(BaseModel):
     token: str
+
+# --- NEW MODELS FOR TASKS ---
+class Task(BaseModel):
+    student_task_id: str
+    title: str
+    description: str
+    category: str
+    status: str
+
+class UpdateTaskStatus(BaseModel):
+    status: str
