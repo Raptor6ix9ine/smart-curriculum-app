@@ -111,3 +111,16 @@ async def mark_attendance(request: MarkAttendanceRequest, current_user: dict = D
     if error: raise HTTPException(status_code=500, detail="Failed to record attendance or already marked.")
     supabase.from_("qr_tokens").delete().eq("token", request.token).execute()
     return {"message": "Attendance marked successfully!"}
+@app.get("/api/warnings/low-attendance")
+async def get_low_attendance_warnings(current_user: dict = Depends(get_current_user)):
+    # Ensure only teachers can access this
+    user_details = await read_users_me(current_user)
+    if user_details.role != 'teacher':
+        raise HTTPException(status_code=403, detail="Unauthorized access.")
+
+    # Call the database function we just created
+    try:
+        response = supabase.rpc('get_low_attendance_students').execute()
+        return response.data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

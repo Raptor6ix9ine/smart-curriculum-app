@@ -1,12 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-// Import the more advanced class from the library
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
+// --- NEW: Component to show low attendance warnings ---
+function AttendanceWarnings({ api }) {
+    const [warnings, setWarnings] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    const fetchWarnings = async () => {
+        setIsLoading(true);
+        setError('');
+        try {
+            const response = await api.get('/api/warnings/low-attendance');
+            setWarnings(response.data);
+        } catch (err) {
+            setError('Failed to fetch attendance warnings.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className="mt-8">
+            <h2 className="text-xl font-bold text-white mb-4">Attendance Warnings</h2>
+            <div className="bg-dark-card p-6 rounded-xl">
+                <button 
+                    onClick={fetchWarnings} 
+                    disabled={isLoading}
+                    className="w-full p-3 bg-yellow-500 text-white font-bold rounded-lg hover:bg-yellow-600 transition-colors disabled:bg-gray-500"
+                >
+                    {isLoading ? 'Checking...' : 'Check for Students with Low Attendance (< 5)'}
+                </button>
+                {error && <p className="text-red-500 mt-4">{error}</p>}
+                <div className="mt-4 space-y-2">
+                    {warnings.length > 0 ? (
+                        warnings.map(student => (
+                            <div key={student.student_id} className="p-3 bg-gray-800 rounded-lg flex justify-between">
+                                <div>
+                                    <p className="font-bold text-white">{student.full_name}</p>
+                                    <p className="text-sm text-gray-400">Roll No: {student.roll_number}</p>
+                                </div>
+                                <p className="font-bold text-red-500">Present: {student.attendance_count}</p>
+                            </div>
+                        ))
+                    ) : (
+                        !isLoading && <p className="text-gray-500 text-center">No students with low attendance found.</p>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
 function TeacherDashboard({ user, schedule, api }) {
-    // ... This component is correct and has no changes
     const [qrCodeUrl, setQrCodeUrl] = useState(null);
     const generateQr = async (scheduleId) => {
         try {
@@ -37,59 +87,27 @@ function TeacherDashboard({ user, schedule, api }) {
                     </div>
                 </div>
             )}
+            {/* Add the new component to the teacher's view */}
+            <AttendanceWarnings api={api} />
         </div>
     );
 }
 
-// --- THIS IS THE UPDATED STUDENT DASHBOARD ---
 function StudentDashboard({ user, schedule, api }) {
     const [showScanner, setShowScanner] = useState(false);
-
     useEffect(() => {
         if (!showScanner) return;
-
-        const html5QrCode = new Html5Qrcode('qr-reader');
-        const qrCodeSuccessCallback = (decodedText) => {
-            handleScanResult(decodedText);
-            html5QrCode.stop().catch(err => console.error("Failed to stop scanner on success.", err));
-            setShowScanner(false);
-        };
-        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
-
-        const startScanner = async () => {
-            try {
-                // Get all available camera devices
-                const devices = await Html5Qrcode.getCameras();
-                if (devices && devices.length) {
-                    let cameraId = devices[0].id; // Default to the first camera
-                    // Find a camera with 'back' in its label, or default to the last camera
-                    const backCamera = devices.find(d => d.label.toLowerCase().includes('back'));
-                    if (backCamera) {
-                        cameraId = backCamera.id;
-                    } else if (devices.length > 1) {
-                        cameraId = devices[devices.length - 1].id;
-                    }
-                    
-                    // Start the scanner with the chosen camera
-                    await html5QrCode.start(
-                        cameraId,
-                        config,
-                        qrCodeSuccessCallback,
-                        undefined // No error callback needed
-                    );
-                }
-            } catch (err) {
-                console.error("Error starting camera:", err);
-            }
-        };
-
-        startScanner();
-
-        return () => {
-            html5QrCode.stop().catch(err => {
-                // Ignore "Scanner is not running" error on cleanup
-            });
-        };
+        let scanner;
+        try {
+            scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
+            const onScanSuccess = (decodedText) => {
+                scanner.clear().catch(()=>{});
+                setShowScanner(false);
+                handleScanResult(decodedText);
+            };
+            scanner.render(onScanSuccess, ()=>{});
+        } catch (error) { console.error("QR Scanner initialization failed", error); }
+        return () => { if(document.getElementById('qr-reader')) scanner.clear().catch(()=>{}); };
     }, [showScanner]);
 
     const handleScanResult = async (token) => {
@@ -128,7 +146,6 @@ function StudentDashboard({ user, schedule, api }) {
 }
 
 function Dashboard({ onLogout }) {
-    // ... This component is correct and has no changes
     const [user, setUser] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -141,6 +158,7 @@ function Dashboard({ onLogout }) {
             setError('No auth token found.'); setLoading(false);
             return;
         }
+
         const axiosInstance = axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${token}` } });
         setApi(axiosInstance);
 
@@ -164,9 +182,7 @@ function Dashboard({ onLogout }) {
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
     if (error) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-red-500">{error}</div>;
     
-    if (!user || !api) {
-        return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
-    }
+    if (!user || !api) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
 
     return (
         <div className="bg-dark-bg min-h-screen text-gray-200 font-sans p-4">
