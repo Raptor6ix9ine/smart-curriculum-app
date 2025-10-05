@@ -1,15 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useDataState } from 'react';
 import axios from 'axios';
 import './index.css';
 import Dashboard from './Dashboard';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
+// --- REGISTRATION COMPONENT ---
 function RegisterPage({ onSwitchToLogin }) {
   const [formData, setFormData] = useState({ fullName: '', email: '', password: '', role: 'student', rollNumber: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false); // State for custom dropdown
+
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  const handleRoleSelect = (roleValue) => {
+    setFormData({ ...formData, role: roleValue });
+    setIsDropdownOpen(false); // Close dropdown after selection
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,11 +50,37 @@ function RegisterPage({ onSwitchToLogin }) {
         <input name="fullName" type="text" placeholder="Full Name" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
         <input name="email" type="email" placeholder="Email" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
         <input name="password" type="password" placeholder="Password" onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
-        <select name="role" value={formData.role} onChange={handleChange} className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green appearance-none">
-          <option value="student">I am a Student</option>
-          <option value="teacher">I am a Teacher</option>
-        </select>
+        
+        {/* --- NEW CUSTOM DROPDOWN --- */}
+        <div className="relative">
+          <label className="text-spark-green text-sm absolute -top-3 left-3 bg-dark-bg px-1">Role</label>
+          <div
+            className="w-full p-3 bg-dark-card border border-spark-green rounded-lg text-white flex justify-between items-center cursor-pointer"
+            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+          >
+            {formData.role === 'student' ? "I am a Student" : "I am a Teacher"}
+            <svg className={`w-4 h-4 transform transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+          {isDropdownOpen && (
+            <div className="absolute z-10 w-full mt-1 bg-dark-card border border-spark-green rounded-lg shadow-lg">
+              <div
+                className="p-3 text-white hover:bg-gray-700 cursor-pointer border-b border-gray-700"
+                onClick={() => handleRoleSelect('student')}
+              >
+                I am a Student
+              </div>
+              <div
+                className="p-3 text-white hover:bg-gray-700 cursor-pointer"
+                onClick={() => handleRoleSelect('teacher')}
+              >
+                I am a Teacher
+              </div>
+            </div>
+          )}
+        </div>
+
         <input name="rollNumber" type="text" placeholder={formData.role === 'student' ? "Roll Number" : "Employee ID"} onChange={handleChange} required className="w-full p-3 bg-dark-card border border-gray-700 rounded-lg text-white focus:outline-none focus:border-spark-green" />
+        
         <button type="submit" className="w-full p-3 bg-spark-green text-white font-bold rounded-lg hover:bg-green-500 transition-colors">Register</button>
         {error && <p className="text-red-500 text-sm text-center">{error}</p>}
       </form>
@@ -54,6 +88,7 @@ function RegisterPage({ onSwitchToLogin }) {
   );
 }
 
+// --- LOGIN COMPONENT ---
 function LoginPage({ onLoginSuccess, onSwitchToRegister }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -83,12 +118,19 @@ function LoginPage({ onLoginSuccess, onSwitchToRegister }) {
       </form>
       <div className="text-center mt-6">
         <p className="text-gray-400">Don't have an account?</p>
-        <button onClick={onSwitchToRegister} className="mt-2 text-spark-green font-bold">Register Here</button>
+        {/* --- NEW BUTTON STYLE --- */}
+        <button 
+          onClick={onSwitchToRegister} 
+          className="mt-2 px-6 py-2 border-2 border-spark-green text-spark-green font-bold rounded-full hover:bg-spark-green hover:text-white transition-colors flex items-center justify-center mx-auto"
+        >
+          Register Here
+        </button>
       </div>
     </div>
   );
 }
 
+// --- MAIN APP COMPONENT ---
 function App() {
   const [token, setToken] = useState(localStorage.getItem('authToken'));
   const [showLogin, setShowLogin] = useState(true);
