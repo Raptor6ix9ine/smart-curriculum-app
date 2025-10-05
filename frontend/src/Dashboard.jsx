@@ -5,7 +5,7 @@ import { Html5QrcodeScanner } from 'html5-qrcode';
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 function AttendanceWarnings({ api }) {
-    // ... (This component is unchanged)
+    // ... (This component is unchanged) ffs
 }
 
 function TeacherDashboard({ user, schedule, api }) {
