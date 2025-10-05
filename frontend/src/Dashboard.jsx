@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
@@ -90,7 +90,6 @@ function TeacherDashboard({ user, schedule, api }) {
     );
 }
 
-// --- THIS COMPONENT HAS BEEN UPDATED ---
 function StudentDashboard({ user, schedule, api }) {
     const [showScanner, setShowScanner] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
@@ -101,11 +100,8 @@ function StudentDashboard({ user, schedule, api }) {
         try {
             const response = await api.get('/api/suggestions');
             setSuggestions(response.data);
-        } catch (error) {
-            console.error("Failed to fetch suggestions", error);
-        } finally {
-            setLoadingSuggestions(false);
-        }
+        } catch (error) { console.error("Failed to fetch suggestions", error); }
+        finally { setLoadingSuggestions(false); }
     };
 
     const updateTaskStatus = async (studentTaskId, newStatus) => {
@@ -114,24 +110,32 @@ function StudentDashboard({ user, schedule, api }) {
             setSuggestions(currentSuggestions => 
                 currentSuggestions.filter(task => task.student_task_id !== studentTaskId)
             );
-        } catch (error) {
-            alert("Failed to update task status.");
-        }
+        } catch (error) { alert("Failed to update task status."); }
     };
-    
+
     useEffect(() => {
         if (!showScanner) return;
-        let scanner;
-        try {
-            scanner = new Html5QrcodeScanner('qr-reader',{ fps: 10, qrbox: { width: 250, height: 250 } },false);
-            const onScanSuccess = (decodedText) => {
-                scanner.clear().catch(()=>{});
-                setShowScanner(false);
-                handleScanResult(decodedText);
-            };
-            scanner.render(onScanSuccess, ()=>{});
-        } catch (error) { console.error("QR Scanner initialization failed", error); }
-        return () => { if(document.getElementById('qr-reader')) scanner.clear().catch(()=>{}); };
+        const html5QrCode = new Html5Qrcode('qr-reader');
+        const qrCodeSuccessCallback = (decodedText) => {
+            handleScanResult(decodedText);
+            html5QrCode.stop().catch(err => {});
+            setShowScanner(false);
+        };
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        const startScanner = async () => {
+            try {
+                const cameras = await Html5Qrcode.getCameras();
+                if (cameras && cameras.length) {
+                    let cameraId = cameras[0].id;
+                    const backCamera = cameras.find(c => c.label.toLowerCase().includes('back'));
+                    if (backCamera) { cameraId = backCamera.id; }
+                    else if (cameras.length > 1) { cameraId = cameras[cameras.length - 1].id; }
+                    await html5QrCode.start(cameraId, config, qrCodeSuccessCallback);
+                }
+            } catch (err) { console.error("Error starting camera:", err); }
+        };
+        startScanner();
+        return () => { html5QrCode.stop().catch(err => {}); };
     }, [showScanner]);
 
     const handleScanResult = async (token) => {
@@ -156,8 +160,6 @@ function StudentDashboard({ user, schedule, api }) {
             <div className="mt-8 text-center">
                 <button onClick={() => setShowScanner(true)} className="px-6 py-3 bg-spark-green text-white font-bold rounded-lg hover:bg-green-500">Scan QR</button>
             </div>
-            
-            {/* --- NEW SUGGESTIONS SECTION --- */}
             <section className="mt-8">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold text-white">Suggested Activities</h2>
@@ -187,7 +189,6 @@ function StudentDashboard({ user, schedule, api }) {
                     )}
                 </div>
              </section>
-
             {showScanner && (
                 <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
                     <div className="bg-dark-card p-8 rounded-lg w-full max-w-md">
@@ -206,8 +207,7 @@ function Dashboard({ onLogout }) {
     const [schedule, setSchedule] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
-    const [api, setApi] = useState(null);
-
+    
     useEffect(() => {
         const token = localStorage.getItem('authToken');
         if (!token) {
@@ -215,14 +215,16 @@ function Dashboard({ onLogout }) {
             return;
         }
 
-        const axiosInstance = axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${token}` } });
-        setApi(axiosInstance);
+        const api = axios.create({
+            baseURL: API_URL,
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
 
         const fetchData = async () => {
             try {
                 const [userResponse, scheduleResponse] = await Promise.all([
-                    axiosInstance.get('/api/users/me'),
-                    axiosInstance.get('/api/schedules/my-day')
+                    api.get('/api/users/me'),
+                    api.get('/api/schedules/my-day')
                 ]);
                 setUser(userResponse.data);
                 setSchedule(scheduleResponse.data);
@@ -238,7 +240,7 @@ function Dashboard({ onLogout }) {
     if (loading) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Loading...</div>;
     if (error) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-red-500">{error}</div>;
     
-    if (!user || !api) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
+    if (!user) return <div className="bg-dark-bg min-h-screen flex items-center justify-center text-white">Initializing...</div>;
 
     return (
         <div className="bg-dark-bg min-h-screen text-gray-200 font-sans p-4">
@@ -250,8 +252,8 @@ function Dashboard({ onLogout }) {
                     </div>
                     <button onClick={onLogout} className="px-4 py-2 border border-red-500 text-red-500 rounded-lg hover:bg-red-500 hover:text-white">Logout</button>
                 </header>
-                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={api} />}
-                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={api} />}
+                {user.role === 'teacher' && <TeacherDashboard user={user} schedule={schedule} api={axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }})} />}
+                {user.role === 'student' && <StudentDashboard user={user} schedule={schedule} api={axios.create({ baseURL: API_URL, headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }})} />}
             </div>
         </div>
     );
