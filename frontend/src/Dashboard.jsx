@@ -47,7 +47,7 @@ function AttendanceWarnings({ api }) {
                             </div>
                         ))
                     ) : (
-                        !isLoading && <p className="text-gray-500 text-center">No students with low attendance found.</p>
+                        !isLoading && warnings.length === 0 && <p className="text-gray-500 text-center pt-4">No students with low attendance found.</p>
                     )}
                 </div>
             </div>
